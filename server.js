@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
+const crypto = require('crypto');
 
 // Configuración de la Base de Datos
 const dbFile = 'database.db';
@@ -11,7 +12,7 @@ const db = new sqlite3.Database(dbFile, (err) => {
         console.error("Error al abrir la base de datos", err.message);
     } else {
         console.log('Conectado a la base de datos SQLite.');
-        const sqlScript = fs.readFileSync('ai_studio_code.sql').toString(); //
+        const sqlScript = fs.readFileSync('ai_studio_code.sql').toString();
         db.exec(sqlScript, (err) => {
             if (err && !err.message.includes("already exists")) {
                 console.error("Error al ejecutar el script SQL:", err.message);
@@ -22,9 +23,16 @@ const db = new sqlite3.Database(dbFile, (err) => {
 
 // Configuración del Servidor Express
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+// Configuración de CORS (permitimos local y el deploy en Render)
+app.use(cors({
+    origin: [
+        "http://localhost:3000",                  // tu frontend local
+        "https://gestion-system-dj.onrender.com" // (cambia esto por la URL real de tu frontend en producción si lo subís)
+    ]
+}));
+
 app.use(express.json());
 
 // --------- PARTE 2: RUTAS DE LA API ---------
@@ -32,8 +40,6 @@ app.use(express.json());
 // --- AUTENTICACIÓN ---
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
-    // IMPORTANTE: En una app real, las contraseñas deben ser "hasheadas" (encriptadas).
-    // Aquí comparamos en texto plano solo por simplicidad del ejemplo.
     const sql = `SELECT * FROM users WHERE username = ? AND password = ?`;
     db.get(sql, [username, password], (err, user) => {
         if (err) {
@@ -45,13 +51,12 @@ app.post('/api/login', (req, res) => {
         if (!user.isActive || new Date(user.activeUntil) < new Date()) {
              return res.status(403).json({ message: "Tu cuenta está inactiva o tu suscripción ha expirado." });
         }
-        // No enviamos la contraseña de vuelta al frontend por seguridad
         const { password: _, ...userWithoutPassword } = user;
         res.json({ user: userWithoutPassword });
     });
 });
 
-// --- EVENTOS (protegido por userId) ---
+// --- EVENTOS ---
 app.get('/api/events', (req, res) => {
     const { userId } = req.query;
     db.all("SELECT * FROM events WHERE user_id = ? ORDER BY date DESC", [userId], (err, rows) => {
@@ -68,7 +73,6 @@ app.post('/api/events', (req, res) => {
     db.run(eventSql, [eventId, user_id, client_id, eventName, date, location, incomeCategory, amountCharged, notes], function(err) {
         if (err) return res.status(500).json({ message: "Error al crear el evento."});
         
-        // Insertar gastos
         const expenseSql = `INSERT INTO expenses (id, event_id, category, amount) VALUES (?, ?, ?, ?)`;
         expenses.forEach(exp => {
              const expenseId = `exp_${crypto.randomUUID()}`;
@@ -78,9 +82,7 @@ app.post('/api/events', (req, res) => {
     });
 });
 
-// (Faltarían las rutas para Actualizar y Borrar Eventos, pero esto es una base sólida)
-
-// --- CLIENTES (protegido por userId) ---
+// --- CLIENTES ---
 app.get('/api/clients', (req, res) => {
     const { userId } = req.query;
     db.all("SELECT * FROM clients WHERE user_id = ?", [userId], (err, rows) => {
@@ -99,12 +101,8 @@ app.post('/api/clients', (req, res) => {
     });
 });
 
-// (Faltarían las rutas para Actualizar y Borrar Clientes)
-
-// --- GESTIÓN DE USUARIOS (ADMIN) ---
-// (Estas rutas deberían estar protegidas para que solo un admin pueda usarlas)
+// --- USUARIOS (ADMIN) ---
 app.get('/api/users', (req, res) => {
-    // Excluimos al admin de la lista
     db.all("SELECT id, username, role, activeUntil, isActive, lastPaymentAmount, subscriptionTier FROM users WHERE role != 'admin'", [], (err, rows) => {
         if (err) return res.status(500).json({ message: "Error al obtener usuarios." });
         res.json(rows);
