@@ -12,12 +12,16 @@ const db = new sqlite3.Database(dbFile, (err) => {
         console.error("Error al abrir la base de datos", err.message);
     } else {
         console.log('Conectado a la base de datos SQLite.');
-        const sqlScript = fs.readFileSync('ai_studio_code.sql').toString();
-        db.exec(sqlScript, (err) => {
-            if (err && !err.message.includes("already exists")) {
-                console.error("Error al ejecutar el script SQL:", err.message);
-            }
-        });
+        try {
+            const sqlScript = fs.readFileSync('ai_studio_code.sql').toString();
+            db.exec(sqlScript, (err) => {
+                if (err && !err.message.includes("already exists")) {
+                    console.error("Error al ejecutar el script SQL:", err.message);
+                }
+            });
+        } catch (e) {
+            console.warn("No se encontró el archivo ai_studio_code.sql, continuando sin inicializar script.");
+        }
     }
 });
 
@@ -25,17 +29,22 @@ const db = new sqlite3.Database(dbFile, (err) => {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configuración de CORS (permitimos local y el deploy en Render)
+// Configuración de CORS (permitimos local y producción)
 app.use(cors({
     origin: [
         "http://localhost:3000",                  // tu frontend local
-        "https://gestion-system-dj.onrender.com" // (cambia esto por la URL real de tu frontend en producción si lo subís)
+        "https://gestion-system-dj.onrender.com" // cambia esto por la URL real de tu frontend en producción si lo subís
     ]
 }));
 
 app.use(express.json());
 
 // --------- PARTE 2: RUTAS DE LA API ---------
+
+// --- RUTA DE PRUEBA RAÍZ ---
+app.get("/", (req, res) => {
+    res.send("API de GestionSystemDj funcionando 🚀");
+});
 
 // --- AUTENTICACIÓN ---
 app.post('/api/login', (req, res) => {
@@ -74,10 +83,12 @@ app.post('/api/events', (req, res) => {
         if (err) return res.status(500).json({ message: "Error al crear el evento."});
         
         const expenseSql = `INSERT INTO expenses (id, event_id, category, amount) VALUES (?, ?, ?, ?)`;
-        expenses.forEach(exp => {
-             const expenseId = `exp_${crypto.randomUUID()}`;
-             db.run(expenseSql, [expenseId, eventId, exp.category, exp.amount]);
-        });
+        if (expenses && expenses.length > 0) {
+            expenses.forEach(exp => {
+                const expenseId = `exp_${crypto.randomUUID()}`;
+                db.run(expenseSql, [expenseId, eventId, exp.category, exp.amount]);
+            });
+        }
         res.status(201).json({ id: eventId, ...req.body });
     });
 });
