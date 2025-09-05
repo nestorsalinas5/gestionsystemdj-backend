@@ -29,19 +29,21 @@ const db = new sqlite3.Database(dbFile, (err) => {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configuración de CORS (permitimos local y producción)
+// Configuración de CORS
 app.use(cors({
     origin: [
-        "http://localhost:3000",                  // tu frontend local
-        "https://gestion-system-dj.onrender.com" // cambia esto por la URL real de tu frontend en producción si lo subís
-    ]
+        "http://localhost:3000",                 // frontend local
+        "https://nestorsalinas5.github.io"       // frontend en GitHub Pages
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true
 }));
 
 app.use(express.json());
 
 // --------- PARTE 2: RUTAS DE LA API ---------
 
-// --- RUTA DE PRUEBA RAÍZ ---
+// --- RUTA RAÍZ ---
 app.get("/", (req, res) => {
     res.send("API de GestionSystemDj funcionando 🚀");
 });
@@ -51,14 +53,10 @@ app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     const sql = `SELECT * FROM users WHERE username = ? AND password = ?`;
     db.get(sql, [username, password], (err, user) => {
-        if (err) {
-            return res.status(500).json({ message: "Error en el servidor." });
-        }
-        if (!user) {
-            return res.status(401).json({ message: "Usuario o contraseña incorrectos." });
-        }
+        if (err) return res.status(500).json({ message: "Error en el servidor." });
+        if (!user) return res.status(401).json({ message: "Usuario o contraseña incorrectos." });
         if (!user.isActive || new Date(user.activeUntil) < new Date()) {
-             return res.status(403).json({ message: "Tu cuenta está inactiva o tu suscripción ha expirado." });
+            return res.status(403).json({ message: "Tu cuenta está inactiva o tu suscripción ha expirado." });
         }
         const { password: _, ...userWithoutPassword } = user;
         res.json({ user: userWithoutPassword });
